@@ -1,11 +1,11 @@
 /* Program reads integers from multiple input files,
  * sorts them using self-made corutines
  * and merges sorted values in single output file.
- * Each input files contains
+ * Each input file contains at most FILE_LENGTH elements.
  *
- * INPUT:	file names for sort
+ * INPUT:	file names to sort
  * OUTPUT:	writes resulting sequence to output.txt file
- outputs overall and each corutine execution time in microsecs */
+ *          outputs overall and each corutine sorting time in secs */
 
 #include <stdio.h>
 #include <stdlib.h>
