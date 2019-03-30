@@ -22,10 +22,12 @@
 #define FILE_LENGTH 10000    /* number of elements in a file */
 
 enum errors {INPUT_PARAMERR, FILEOPENERR, FILEREADERR};
-static ucontext_t uctx_main, *uctx_coro = NULL;
+static ucontext_t uctx_main, uctx_temp, *uctx_coro = NULL;
 static volatile int coro_num = 0,    /* overall number of coroutines */
-           coro_cur = 0;    /* current coroutine id */   
-static bool sched = false;  /* should schedule coroutines or not */
+    coro_cur = 0;                    /* current coroutine id */   
+static int active_coroutine = 0;
+static bool sched = false,  /* should schedule coroutines or not */
+    *coro_active;                /* coroutine active status */
 static double *coro_time = NULL, coro_cur_time = 0;
 
 static void *
@@ -38,6 +40,7 @@ allocate_stack_sig()
 	ss.ss_flags = 0;
 	sigaltstack(&ss, NULL);
 	return stack;
+
 }
 
 static void *
@@ -111,6 +114,7 @@ int writefile(const char *fname, const int *a, int length)
     return i;
 }
 
+/* schedules next active coroutine */
 void schedule_coroutines()
 {
     if (!sched)
@@ -119,9 +123,13 @@ void schedule_coroutines()
     coro_cur_time = clock() - coro_cur_time;
     coro_time[coro_old] += coro_cur_time / (double)CLOCKS_PER_SEC;
     coro_cur = (coro_old + 1) % coro_num;
+    while (!coro_active[coro_cur]) {
+        coro_cur = (coro_cur + 1) % coro_num;
+    }
     coro_cur_time = clock();
     if (swapcontext(&uctx_coro[coro_old], &uctx_coro[coro_cur]) == -1)
         handle_error("swapcontext");
+    coro_cur = coro_old;
 }
 
 /* reorders values in arrays a and b in ascending order */
@@ -134,11 +142,11 @@ void merge(int *a, int *b, int alen, int blen)
     /* fill temp */
     while (i < alen && j < blen) {
         p = (a[i] < b[j])? a+i : b+j;
-        //schedule_coroutines();
+        schedule_coroutines();
         *temp++ = *p;
-        //schedule_coroutines();
+        schedule_coroutines();
         (a[i] < b[j])? i++ : j++;
-        //schedule_coroutines();
+        schedule_coroutines();
     }
     schedule_coroutines();
     p = (i == alen)? b + j : a + i;
@@ -146,11 +154,11 @@ void merge(int *a, int *b, int alen, int blen)
     int remains = length - i - j;
     schedule_coroutines();
     while (remains > 0) {
-        //schedule_coroutines();
+        schedule_coroutines();
         *temp++ = *p++;
-        //schedule_coroutines();
+        schedule_coroutines();
         remains--;
-        //schedule_coroutines();
+        schedule_coroutines();
     }
     schedule_coroutines();
     temp -= length;     /* return to start of temp */
@@ -179,11 +187,11 @@ void sort(int *vals, int len)
         schedule_coroutines();
         if(*vals > *(vals + 1)) {
             int temp = *vals;
-            //schedule_coroutines();
+            schedule_coroutines();
             *vals = *(vals+1);
-            //schedule_coroutines();
+            schedule_coroutines();
             *(vals+1) = temp;
-            //schedule_coroutines();
+            schedule_coroutines();
         }
     } else {
         schedule_coroutines();
@@ -220,7 +228,9 @@ void mergefiles(int *a, int start, int end, int *lens)
 void setup_coroutines(int *files, int fc, int *lens)
 {
     uctx_coro = (ucontext_t *)calloc(fc, sizeof(ucontext_t));
+    coro_active = (bool *)calloc(fc, sizeof(bool));
     coro_num = fc;
+    active_coroutine = fc;
     coro_time = calloc(coro_num, sizeof(double));
     int shift = 0;
     for (int i = 0; i < coro_num; i++) {
@@ -229,13 +239,31 @@ void setup_coroutines(int *files, int fc, int *lens)
             handle_error("getcontext");
         uctx_coro[i].uc_stack.ss_sp = func_stack;
         uctx_coro[i].uc_stack.ss_size = stack_size;
-        /* the last coro should return to main function */
-        uctx_coro[i].uc_link = (i == coro_num - 1) ? &uctx_main : &uctx_coro[i + 1];
+        /* all coroutines shall return to main
+         * and wait for other if needed */
+        uctx_coro[i].uc_link = &uctx_main;
         makecontext(&uctx_coro[i], sort, 2, files + shift, lens[i]);
         shift += lens[i];
+        coro_active[i] = true;
     }
     coro_cur = 0;
     sched = true;
+}
+
+int readallfiles(char **filenames, int *files, int fc, int *lens)
+{
+    int totallen = 0,
+        len = 0,
+        *readpos = files;       /* pos in array where to read */
+    for (int i = 0; i < fc; i++) {
+        len = readfile(filenames[i], readpos);
+        if (len == 0)
+            exit(FILEREADERR);
+        lens[i] = len;
+        totallen += len;
+        readpos += len;
+    }
+    return totallen;
 }
 
 int main(int argc, char **argv)
@@ -245,21 +273,12 @@ int main(int argc, char **argv)
                 "[<filename2> ...]\n");
         exit(INPUT_PARAMERR);
     }
-    int fc = argc - 1,          /* file count */
-        totallen = 0,            /* overall length */
+    int fc = argc - 1,                   /* file count */
         *lens = calloc(fc, sizeof(int)), /* array of lengths */
         *files = calloc(fc * FILE_LENGTH, sizeof(int)),
-        *readpos = files,       /* pos in array where to read */
-        len = 0;
-    for (int i = 0; i < fc; i++) {
-        len = readfile(argv[i+1], readpos);
-        if (len == 0)
-            exit(FILEREADERR);
-        lens[i] = len;
-        totallen += len;
-        readpos += len;
-    }
-    double ttime = clock();           /* total sorting time */
+        totallen = readallfiles(argv+1, files, fc, lens);
+    double ttime = clock();     /* total sorting time */
+    
     if (fc == 1) {
         sort(files, lens[0]);
     } else {
@@ -267,6 +286,16 @@ int main(int argc, char **argv)
         /* start coroutines */
         coro_cur_time = clock();
         if (swapcontext(&uctx_main, &uctx_coro[coro_cur]) == -1)
+            handle_error("swapcontext");
+    }
+
+    coro_active[coro_cur] = false;
+    active_coroutine--;
+    while (active_coroutine) {
+        int next = coro_cur + 1;
+        while (!coro_active[next])
+            next = (next + 1) % coro_num;
+        if (swapcontext(&uctx_temp, &uctx_coro[next]) == -1)
             handle_error("swapcontext");
     }
     sched = false;
