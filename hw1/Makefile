@@ -11,5 +11,5 @@ run: sort clean_output
 	./sort $(all_test_files)
 check:
 	python checker.py -f output.txt
-.PHONY = clean clean_output run_simple run_double run
+.PHONY = clean clean_output run
 

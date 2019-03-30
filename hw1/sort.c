@@ -3,8 +3,8 @@
  * and merges sorted values in single output file.
  * Each input file contains at most FILE_LENGTH elements.
  *
- * INPUT:	file names to sort
- * OUTPUT:	writes resulting sequence to output.txt file
+ * INPUT:   file names to sort
+ * OUTPUT:  writes resulting sequence to output.txt file
  *          outputs overall and each corutine sorting time in secs */
 
 #include <stdio.h>
