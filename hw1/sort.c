@@ -30,38 +30,38 @@ static bool sched = false,  /* should schedule coroutines or not */
     *coro_active;                /* coroutine active status */
 static double *coro_time = NULL, coro_cur_time = 0;
 
+
 static void *
 allocate_stack_sig()
 {
-	void *stack = malloc(stack_size);
-	stack_t ss;
-	ss.ss_sp = stack;
-	ss.ss_size = stack_size;
-	ss.ss_flags = 0;
-	sigaltstack(&ss, NULL);
-	return stack;
-
+        void *stack = malloc(stack_size);
+        stack_t ss;
+        ss.ss_sp = stack;
+        ss.ss_size = stack_size;
+        ss.ss_flags = 0;
+        sigaltstack(&ss, NULL);
+        return stack;
 }
 
 static void *
 allocate_stack_mmap()
 {
-	return mmap(NULL, stack_size, PROT_READ | PROT_WRITE | PROT_EXEC,
-		    MAP_ANON | MAP_PRIVATE, -1, 0);
+        return mmap(NULL, stack_size, PROT_READ | PROT_WRITE | PROT_EXEC,
+                    MAP_ANON | MAP_PRIVATE, -1, 0);
 }
 
 static void *
 allocate_stack_mprot()
 {
-	void *stack = malloc(stack_size);
-	mprotect(stack, stack_size, PROT_READ | PROT_WRITE | PROT_EXEC);
-	return stack;
+        void *stack = malloc(stack_size);
+        mprotect(stack, stack_size, PROT_READ | PROT_WRITE | PROT_EXEC);
+        return stack;
 }
 
 enum stack_type {
-	STACK_MMAP,
-	STACK_SIG,
-	STACK_MPROT
+        STACK_MMAP,
+        STACK_SIG,
+        STACK_MPROT
 };
 
 /**
@@ -71,14 +71,14 @@ enum stack_type {
 static void *
 allocate_stack(enum stack_type t)
 {
-	switch(t) {
-	case STACK_MMAP:
-		return allocate_stack_mmap();
-	case STACK_SIG:
-		return allocate_stack_sig();
-	case STACK_MPROT:
-		return allocate_stack_mprot();
-	}
+        switch(t) {
+        case STACK_MMAP:
+                return allocate_stack_mmap();
+        case STACK_SIG:
+                return allocate_stack_sig();
+        case STACK_MPROT:
+                return allocate_stack_mprot();
+        }
     return NULL;
 }
 
