@@ -152,17 +152,14 @@ int writefile(const char *fname, const int *a, int length)
 void schedule_coroutines()
 {
     if (!shed) {
-	/* printf("no sched\n"); */
         return;
     }
     clock_t clk = clock() - coros.clk;
     double time_passed = clk/(double)CLOCKS_PER_SEC;
-    /* printf("%d\n", clk); */
     /* switch if timeslice is exceeded */
     if (coros.timeslice > time_passed) {
-	/* return; */
+	return;
     }
-    /* printf("%g %g\n", coros.timeslice, time_passed); */
     coros.current->time += time_passed;
     coroutine *prev = coros.current;
     coros.clk = clock();    
@@ -334,6 +331,7 @@ int main(int argc, const char **argv)
         coros.clk = clock();
         if (swapcontext(&uctx_main, &coros.current->context) == -1)
             handle_error("swapcontext");
+	/* return after coroutine finished file sort */
 	if (&coros.current->node != coros.current->node.next) {
 	    remove_node((struct list *)coros.current);
 	    if (swapcontext(&uctx_temp, &coros.current->context) == -1)
@@ -341,9 +339,8 @@ int main(int argc, const char **argv)
 	}
     }
     shed = 0;
-    printf("merge\n");
     mergefiles(files, 0, fc, lens);
-    ttime = (clock() - ttime);// / (double)CLOCKS_PER_SEC;
+    ttime = (clock() - ttime) / (double)CLOCKS_PER_SEC;
     if (fc > 1) {
         for (int i = 0; i < coros.num; i++)
             printf("Coroutine #%d sorting time: %.6f sec\n", 
