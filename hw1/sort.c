@@ -1,9 +1,11 @@
-/* Program reads integers from multiple input files,
- * sorts them using self-made corutines
+/* Program reads integers from multiple (N) input files,
+ * sorts them using self-made coroutines
  * and merges sorted values in single output file.
+ * Each coroutine runs for T/N msecs and switches to the other,
+ * where T - time latency.
  * Each input file contains at most FILE_LENGTH elements.
  *
- * INPUT:   file names to sort
+ * INPUT:   switch latency (T) and N file names to sort
  * OUTPUT:  writes resulting sequence to output.txt file
  *          outputs overall and each corutine sorting time in secs */
 
@@ -22,6 +24,7 @@
 #define FILE_LENGTH 10000    /* number of elements in a file */
 enum errors {INPUT_PARAMERR, FILEOPENERR, FILEREADERR};
 
+int shed = 0;
 static ucontext_t uctx_main;
 
 struct list {
@@ -33,13 +36,15 @@ typedef struct {
 				 * and next active coroutine */
     ucontext_t context;
     double time;		/* coroutine time */
+    int id;
 } coroutine;
 
 static struct coro {
     coroutine *pool;
     coroutine *current;
-    double time;		/* time counter assistant */
+    double timeslice;		/* coroutine timeslice in msecs */
     int num;
+    clock_t clk;		/* time counter assistant */
 } coros;
 
 void connect_nodes(struct list *n1, struct list *n2)
@@ -55,6 +60,7 @@ void remove_node(struct list *n)
     if (n == NULL)
 	return;
     connect_nodes(n->prev, n->next);
+    coros.current = (coroutine *)n->next;
     n->prev = NULL;
     n->next = NULL;
 }
@@ -145,13 +151,22 @@ int writefile(const char *fname, const int *a, int length)
 /* schedules next active coroutine */
 void schedule_coroutines()
 {
-    if (coros.current == NULL)
+    if (!shed) {
+	/* printf("no sched\n"); */
         return;
+    }
+    clock_t clk = clock() - coros.clk;
+    double time_passed = clk/(double)CLOCKS_PER_SEC;
+    /* printf("%d\n", clk); */
+    /* switch if timeslice is exceeded */
+    if (coros.timeslice > time_passed) {
+	/* return; */
+    }
+    /* printf("%g %g\n", coros.timeslice, time_passed); */
+    coros.current->time += time_passed;
     coroutine *prev = coros.current;
-    coros.time = clock() - coros.time;
-    prev->time += coros.time / (double)CLOCKS_PER_SEC;
+    coros.clk = clock();    
     coros.current = (coroutine *)coros.current->node.next;
-    coros.time = clock();
     if (swapcontext(&prev->context, &coros.current->context) == -1)
 	handle_error("swapcontext");
     coros.current = prev;
@@ -274,6 +289,7 @@ void setup_coroutines(const int *files, int fc, const int *lens)
         coros.pool[i].context.uc_link = &uctx_main;
         makecontext(&coros.pool[i].context, sort, 2, files + shift, lens[i]);
 	shift += lens[i];
+	coros.pool[i].id = i;
     }
     coros.current = &coros.pool[0];
 }
@@ -292,19 +308,21 @@ int readallfiles(const char **filenames, int *files, int fc, int *lens)
         readpos += len;
     }
     return totallen;
-}
+ }
 
 int main(int argc, const char **argv)
 {
-    if (argc < 2) {
-        fprintf(stderr, "usage: sort <filename1>"
+    if (argc < 3) {
+        fprintf(stderr, "usage: sort <time latency> <filename1>"
                 "[<filename2> ...]\n");
         exit(INPUT_PARAMERR);
     }
-    int fc = argc - 1,                   /* file count */
+    int fc = argc - 2,                   /* file count */
         *lens = calloc(fc, sizeof(int)), /* array of lengths */
         *files = calloc(fc * FILE_LENGTH, sizeof(int)),
-        totallen = readallfiles(argv+1, files, fc, lens);
+        totallen = readallfiles(argv+2, files, fc, lens);
+    /* multiply divisor by 1000 to get msecs */
+    coros.timeslice = atoi(argv[1])/(double)(1000*fc);
     ucontext_t uctx_temp;
     double ttime = clock();     /* total sorting time */
     if (fc == 1) {
@@ -312,18 +330,20 @@ int main(int argc, const char **argv)
     } else {
 	setup_coroutines(files, fc, lens);
         /* start coroutines */
-        coros.time = clock();
+	shed = 1;
+        coros.clk = clock();
         if (swapcontext(&uctx_main, &coros.current->context) == -1)
             handle_error("swapcontext");
-	coros.current = (coroutine *)coros.current->node.next;
-	remove_node(coros.current->node.prev);
 	if (&coros.current->node != coros.current->node.next) {
+	    remove_node((struct list *)coros.current);
 	    if (swapcontext(&uctx_temp, &coros.current->context) == -1)
 		handle_error("swapcontext");
 	}
     }
+    shed = 0;
+    printf("merge\n");
     mergefiles(files, 0, fc, lens);
-    ttime = (clock() - ttime) / (double)CLOCKS_PER_SEC;
+    ttime = (clock() - ttime);// / (double)CLOCKS_PER_SEC;
     if (fc > 1) {
         for (int i = 0; i < coros.num; i++)
             printf("Coroutine #%d sorting time: %.6f sec\n", 
@@ -337,3 +357,4 @@ int main(int argc, const char **argv)
     free(files);
     return 0;
 }
+
