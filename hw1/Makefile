@@ -1,7 +1,7 @@
 CC=gcc
 CCFLAGS=-Wall -g
 all_test_files = $(wildcard test_data/*.txt)
-timeslice = 10 #msecs
+timeslice = 100 #msecs
 sort: sort.c
 	$(CC) $(CCFLAGS) $< -o $@
 clean:

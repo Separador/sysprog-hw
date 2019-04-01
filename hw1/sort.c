@@ -24,7 +24,6 @@
 #define FILE_LENGTH 10000    /* number of elements in a file */
 enum errors {INPUT_PARAMERR, FILEOPENERR, FILEREADERR};
 
-int shed = 0;
 static ucontext_t uctx_main;
 
 struct list {
@@ -151,7 +150,7 @@ int writefile(const char *fname, const int *a, int length)
 /* schedules next active coroutine */
 void schedule_coroutines()
 {
-    if (!shed) {
+    if (&coros.current->node == coros.current->node.next) {
         return;
     }
     clock_t clk = clock() - coros.clk;
@@ -327,7 +326,6 @@ int main(int argc, const char **argv)
     } else {
 	setup_coroutines(files, fc, lens);
         /* start coroutines */
-	shed = 1;
         coros.clk = clock();
         if (swapcontext(&uctx_main, &coros.current->context) == -1)
             handle_error("swapcontext");
@@ -338,7 +336,6 @@ int main(int argc, const char **argv)
 		handle_error("swapcontext");
 	}
     }
-    shed = 0;
     mergefiles(files, 0, fc, lens);
     ttime = (clock() - ttime) / (double)CLOCKS_PER_SEC;
     if (fc > 1) {
@@ -354,4 +351,3 @@ int main(int argc, const char **argv)
     free(files);
     return 0;
 }
-
