@@ -17,8 +17,8 @@
 #include <stdbool.h>
 #include <time.h>
 
-#define handle_error(msg) \
-   do { perror(msg); exit(EXIT_FAILURE); } while (0)
+#define handle_error(msg)                           \
+    do { perror(msg); exit(EXIT_FAILURE); } while (0)
 
 #define stack_size 1024 * 1024
 #define FILE_LENGTH 10000    /* number of elements in a file */
@@ -31,8 +31,8 @@ struct list {
 };
 
 typedef struct {
-    struct list node;		/* points to previous
-				 * and next active coroutine */
+    struct list node;           /* points to previous
+                                 * and next active coroutine */
     ucontext_t context;
     double time;                /* coroutine time in secs */
     int id;
@@ -43,13 +43,13 @@ static struct coro {
     coroutine *current;
     double timeslice;           /* coroutine timeslice in secs */
     int num;
-    clock_t clk;		/* time counter assistant */
+    clock_t clk;                /* time counter assistant */
 } coros;
 
 void connect_nodes(struct list *n1, struct list *n2)
 {
     if (n1 == NULL || n2 == NULL)
-	return;
+        return;
     n1->next = n2;
     n2->prev = n1;
 }
@@ -57,61 +57,57 @@ void connect_nodes(struct list *n1, struct list *n2)
 void remove_node(struct list *n)
 {
     if (n == NULL)
-	return;
+        return;
     connect_nodes(n->prev, n->next);
     coros.current = (coroutine *)n->next;
     n->prev = NULL;
     n->next = NULL;
 }
 
-static void *
-allocate_stack_sig()
+static void * allocate_stack_sig()
 {
-        void *stack = malloc(stack_size);
-        stack_t ss;
-        ss.ss_sp = stack;
-        ss.ss_size = stack_size;
-        ss.ss_flags = 0;
-        sigaltstack(&ss, NULL);
-        return stack;
+    void *stack = malloc(stack_size);
+    stack_t ss;
+    ss.ss_sp = stack;
+    ss.ss_size = stack_size;
+    ss.ss_flags = 0;
+    sigaltstack(&ss, NULL);
+    return stack;
 }
 
-static void *
-allocate_stack_mmap()
+static void * allocate_stack_mmap()
 {
-        return mmap(NULL, stack_size, PROT_READ | PROT_WRITE | PROT_EXEC,
-                    MAP_ANON | MAP_PRIVATE, -1, 0);
+    return mmap(NULL, stack_size, PROT_READ | PROT_WRITE | PROT_EXEC,
+            MAP_ANON | MAP_PRIVATE, -1, 0);
 }
 
-static void *
-allocate_stack_mprot()
+static void * allocate_stack_mprot()
 {
-        void *stack = malloc(stack_size);
-        mprotect(stack, stack_size, PROT_READ | PROT_WRITE | PROT_EXEC);
-        return stack;
+    void *stack = malloc(stack_size);
+    mprotect(stack, stack_size, PROT_READ | PROT_WRITE | PROT_EXEC);
+    return stack;
 }
 
 enum stack_type {
-        STACK_MMAP,
-        STACK_SIG,
-        STACK_MPROT
+    STACK_MMAP,
+    STACK_SIG,
+    STACK_MPROT
 };
 
 /**
  * Use this wrapper to choose your favourite way of stack
  * allocation.
  */
-static void *
-allocate_stack(enum stack_type t)
+static void * allocate_stack(enum stack_type t)
 {
-        switch(t) {
+    switch(t) {
         case STACK_MMAP:
-                return allocate_stack_mmap();
+            return allocate_stack_mmap();
         case STACK_SIG:
-                return allocate_stack_sig();
+            return allocate_stack_sig();
         case STACK_MPROT:
-                return allocate_stack_mprot();
-        }
+            return allocate_stack_mprot();
+    }
     return NULL;
 }
 
@@ -157,14 +153,14 @@ void schedule_coroutines()
     double time_passed = clk/(double)CLOCKS_PER_SEC;
     /* switch if timeslice is exceeded */
     if (coros.timeslice > time_passed) {
-	return;
+        return;
     }
     coros.current->time += time_passed;
     coroutine *prev = coros.current;
     coros.clk = clock();    
     coros.current = (coroutine *)coros.current->node.next;
     if (swapcontext(&prev->context, &coros.current->context) == -1)
-	handle_error("swapcontext");
+        handle_error("swapcontext");
     coros.current = prev;
 }
 
@@ -219,8 +215,7 @@ void sort(int *vals, int len)
     schedule_coroutines();
     if (len == 1) {
         return;
-    }
-    else if (len == 2) {
+    } else if (len == 2) {
         schedule_coroutines();
         if(*vals > *(vals + 1)) {
             int temp = *vals;
@@ -273,19 +268,19 @@ void setup_coroutines(const int *files, int fc, const int *lens)
             handle_error("getcontext");
         coros.pool[i].context.uc_stack.ss_sp = func_stack;
         coros.pool[i].context.uc_stack.ss_size = stack_size;
-	if (i == 0) {
-	    connect_nodes(&coros.pool[coros.num-1].node,
-			  &coros.pool[i].node);
-	} else {
-	    connect_nodes(&coros.pool[i-1].node, 
-			  &coros.pool[i].node);
-	}
+        if (i == 0) {
+            connect_nodes(&coros.pool[coros.num-1].node,
+                    &coros.pool[i].node);
+        } else {
+            connect_nodes(&coros.pool[i-1].node, 
+                    &coros.pool[i].node);
+        }
         /* all coroutines shall return to main
          * and wait for other if needed */
         coros.pool[i].context.uc_link = &uctx_main;
         makecontext(&coros.pool[i].context, sort, 2, files + shift, lens[i]);
-	shift += lens[i];
-	coros.pool[i].id = i;
+        shift += lens[i];
+        coros.pool[i].id = i;
     }
     coros.current = &coros.pool[0];
 }
@@ -324,26 +319,26 @@ int main(int argc, const char **argv)
     if (fc == 1) {
         sort(files, lens[0]);
     } else {
-	setup_coroutines(files, fc, lens);
+        setup_coroutines(files, fc, lens);
         /* start coroutines */
         coros.clk = clock();
         if (swapcontext(&uctx_main, &coros.current->context) == -1)
             handle_error("swapcontext");
-	/* return after coroutine finished file sort */
-	if (&coros.current->node != coros.current->node.next) {
-	    remove_node((struct list *)coros.current);
-	    if (swapcontext(&uctx_temp, &coros.current->context) == -1)
-		handle_error("swapcontext");
-	}
+        /* return after coroutine finished file sort */
+        if (&coros.current->node != coros.current->node.next) {
+            remove_node((struct list *)coros.current);
+            if (swapcontext(&uctx_temp, &coros.current->context) == -1)
+                handle_error("swapcontext");
+        }
     }
     mergefiles(files, 0, fc, lens);
     ttime = (clock() - ttime) / (double)CLOCKS_PER_SEC;
     if (fc > 1) {
         for (int i = 0; i < coros.num; i++)
             printf("Coroutine #%d sorting time: %.6f sec\n", 
-		   i, coros.pool[i].time);
-	for (int i = 0; i < coros.num; i++)
-	    free(coros.pool[i].context.uc_stack.ss_sp);
+                    i, coros.pool[i].time);
+        for (int i = 0; i < coros.num; i++)
+            free(coros.pool[i].context.uc_stack.ss_sp);
     }
     printf("Overall sorting time: %.6f sec\n", ttime);
     writefile("output.txt", files, totallen);
