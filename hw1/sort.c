@@ -278,7 +278,7 @@ void setup_coroutines(const int *files, int fc, const int *lens)
  * returns overall integers read count */
 int readallfiles(const char **filenames, int **files, int fc, int *lens)
 {
-    int shift = 0, len = 0, cap = 0;
+    int shift = 0, len = 0, cap = 0, val = 0;
     if (*files == NULL) {
         *files = realloc(*files, (cap + MIN_BUF) * sizeof(int));
         cap += MIN_BUF;
@@ -288,12 +288,13 @@ int readallfiles(const char **filenames, int **files, int fc, int *lens)
         if (f == NULL)
             exit(FILEOPENERR);
         len = 0;
-        while (fscanf(f, "%d", *files + shift + len) == 1) {
-            len++;
-            if (shift + len >= cap) {      /* not enough cap? double it */
+        while (fscanf(f, "%d", &val) == 1) {
+            if (shift + len + 1 >= cap) {      /* not enough cap? double it */
                 *files = realloc(*files, cap * 2 * sizeof(int));
                 cap *= 2;
             }
+            *(*files + shift + len) = val;
+            len++;
         }
         fclose(f);
         lens[i] = len;
