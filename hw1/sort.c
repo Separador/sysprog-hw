@@ -21,7 +21,7 @@
     do { perror(msg); exit(EXIT_FAILURE); } while (0)
 
 #define stack_size 1024 * 1024
-#define FILE_LENGTH 10000    /* number of elements in a file */
+#define MIN_LENGTH 16    /* min allocated length for file */
 enum errors {INPUT_PARAMERR, FILEOPENERR, FILEREADERR};
 
 static ucontext_t uctx_main;
@@ -109,21 +109,6 @@ static void * allocate_stack(enum stack_type t)
             return allocate_stack_mprot();
     }
     return NULL;
-}
-
-/* reads file specified by fname and fills vals;
- * returns number of read vals */
-int readfile(const char *fname, int *vals)
-{
-    FILE *f = fopen(fname, "r");
-    if (f == NULL)
-        exit(FILEOPENERR);
-    int length = 0;
-    while (fscanf(f, "%d", vals++) == 1) {
-        length++;
-    }
-    fclose(f);
-    return length;
 }
 
 /* writes integers from array vals to file specified by fname;
@@ -285,20 +270,33 @@ void setup_coroutines(const int *files, int fc, const int *lens)
     coros.current = &coros.pool[0];
 }
 
-int readallfiles(const char **filenames, int *files, int fc, int *lens)
+/* reads integers from files 'filenames' into '*files' array;
+ * allocates memory and resizes '*files' if needed;
+ * returns overall integers read count */
+int readallfiles(const char **filenames, int **files, int fc, int *lens)
 {
-    int totallen = 0,
-        len = 0,
-        *readpos = files;       /* pos in array where to read */
-    for (int i = 0; i < fc; i++) {
-        len = readfile(filenames[i], readpos);
-        if (len == 0)
-            exit(FILEREADERR);
-        lens[i] = len;
-        totallen += len;
-        readpos += len;
+    int shift = 0, len = 0, cap = 0;
+    if (*files == NULL) {
+        *files = realloc(*files, (cap + MIN_LENGTH) * sizeof(int));
+        cap += MIN_LENGTH;
     }
-    return totallen;
+    for (int i = 0; i < fc; i++) {
+        FILE *f = fopen(filenames[i], "r");
+        if (f == NULL)
+            exit(FILEOPENERR);
+        len = 0;
+        while (fscanf(f, "%d", *files + shift + len) == 1) {
+            len++;
+            if (shift + len >= cap) {      /* not enough cap? double it */
+                *files = realloc(*files, cap * 2 * sizeof(int));
+                cap *= 2;
+            }
+        }
+        fclose(f);
+        lens[i] = len;
+        shift += len;
+    }
+    return shift;
 }
 
 int main(int argc, const char **argv)
@@ -310,8 +308,8 @@ int main(int argc, const char **argv)
     }
     int fc = argc - 2,                   /* file count */
         *lens = calloc(fc, sizeof(int)), /* array of lengths */
-        *files = calloc(fc * FILE_LENGTH, sizeof(int)),
-        totallen = readallfiles(argv+2, files, fc, lens);
+        *files = NULL,                   /* array of read integers */
+        totallen = readallfiles(argv+2, &files, fc, lens);
     /* dividing input timeslice by 1000 to convert msecs into secs */
     coros.timeslice = atoi(argv[1])/(double)(1000*fc);
     ucontext_t uctx_temp;
