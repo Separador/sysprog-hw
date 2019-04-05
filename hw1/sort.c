@@ -35,6 +35,7 @@ typedef struct {
                                  * and next active coroutine */
     ucontext_t context;
     double time;                /* coroutine time in secs */
+    char *stack;                /* stack ptr for free() */
     int id;
 } coroutine;
 
@@ -253,6 +254,7 @@ void setup_coroutines(const int *files, int fc, const int *lens)
             handle_error("getcontext");
         coros.pool[i].context.uc_stack.ss_sp = func_stack;
         coros.pool[i].context.uc_stack.ss_size = stack_size;
+        coros.pool[i].stack = func_stack;
         if (i == 0) {
             connect_nodes(&coros.pool[coros.num-1].node,
                     &coros.pool[i].node);
@@ -336,7 +338,7 @@ int main(int argc, const char **argv)
             printf("Coroutine #%d sorting time: %.6f sec\n", 
                     i, coros.pool[i].time);
         for (int i = 0; i < coros.num; i++)
-            free(coros.pool[i].context.uc_stack.ss_sp);
+            free(coros.pool[i].stack);
     }
     printf("Overall sorting time: %.6f sec\n", ttime);
     writefile("output.txt", files, totallen);
