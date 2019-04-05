@@ -132,9 +132,10 @@ int writefile(const char *fname, const int *a, int length)
 /* schedules next active coroutine */
 void schedule_coroutines()
 {
-    if (&coros.current->node == coros.current->node.next) {
+    if (coros.pool == NULL)
         return;
-    }
+    if (&coros.current->node == coros.current->node.next)
+        return;
     clock_t clk = clock() - coros.clk;
     double time_passed = clk/(double)CLOCKS_PER_SEC;
     /* switch if timeslice is exceeded */
@@ -312,13 +313,17 @@ int main(int argc, const char **argv)
         *lens = calloc(fc, sizeof(int)), /* array of lengths */
         *files = NULL,                   /* array of read integers */
         totallen = readallfiles(argv+2, &files, fc, lens);
-    /* dividing input timeslice by 1000 to convert msecs into secs */
-    coros.timeslice = atoi(argv[1])/(double)(1000*fc);
-    ucontext_t uctx_temp;
     double ttime = clock();     /* total sorting time */
+    ucontext_t uctx_temp;
+
+    coros.pool = NULL;
+    coros.current = NULL;
+
     if (fc == 1) {
         sort(files, lens[0]);
     } else {
+        /* dividing input timeslice by 1000 to convert msecs into secs */
+        coros.timeslice = atoi(argv[1])/(double)(1000*fc);
         setup_coroutines(files, fc, lens);
         /* start coroutines */
         coros.clk = clock();
@@ -339,10 +344,10 @@ int main(int argc, const char **argv)
                     i, coros.pool[i].time);
         for (int i = 0; i < coros.num; i++)
             free(coros.pool[i].stack);
+        free(coros.pool);
     }
     printf("Overall sorting time: %.6f sec\n", ttime);
     writefile("output.txt", files, totallen);
-    free(coros.pool);
     free(files);
     return 0;
 }
