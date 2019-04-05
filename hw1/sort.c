@@ -21,7 +21,7 @@
     do { perror(msg); exit(EXIT_FAILURE); } while (0)
 
 #define stack_size 1024 * 1024
-#define MIN_LENGTH 16    /* min allocated length for file */
+#define MIN_BUF 16    /* min allocated length for file */
 enum errors {INPUT_PARAMERR, FILEOPENERR, FILEREADERR};
 
 static ucontext_t uctx_main;
@@ -279,8 +279,8 @@ int readallfiles(const char **filenames, int **files, int fc, int *lens)
 {
     int shift = 0, len = 0, cap = 0;
     if (*files == NULL) {
-        *files = realloc(*files, (cap + MIN_LENGTH) * sizeof(int));
-        cap += MIN_LENGTH;
+        *files = realloc(*files, (cap + MIN_BUF) * sizeof(int));
+        cap += MIN_BUF;
     }
     for (int i = 0; i < fc; i++) {
         FILE *f = fopen(filenames[i], "r");
