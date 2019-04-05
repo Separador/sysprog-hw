@@ -2,10 +2,10 @@
  * sorts them using self-made coroutines
  * and merges sorted values in single output file.
  * Each coroutine runs for T/N msecs and switches to the other,
- * where T - time latency.
- * Each input file contains at most FILE_LENGTH elements.
+ * where T - target latency for all coroutines.
  *
- * INPUT:   switch latency (T) and N file names to sort
+ * INPUT:   target latency (T) in msecs and N file names to sort
+ *          usage: sort <T> <filename1>[<filename2> ...]
  * OUTPUT:  writes resulting sequence to output.txt file
  *          outputs overall and each corutine sorting time in secs */
 
@@ -34,14 +34,14 @@ typedef struct {
     struct list node;		/* points to previous
 				 * and next active coroutine */
     ucontext_t context;
-    double time;		/* coroutine time */
+    double time;                /* coroutine time in secs */
     int id;
 } coroutine;
 
 static struct coro {
     coroutine *pool;
     coroutine *current;
-    double timeslice;		/* coroutine timeslice in msecs */
+    double timeslice;           /* coroutine timeslice in secs */
     int num;
     clock_t clk;		/* time counter assistant */
 } coros;
@@ -304,12 +304,12 @@ int readallfiles(const char **filenames, int *files, int fc, int *lens)
         readpos += len;
     }
     return totallen;
- }
+}
 
 int main(int argc, const char **argv)
 {
     if (argc < 3) {
-        fprintf(stderr, "usage: sort <time latency> <filename1>"
+        fprintf(stderr, "usage: sort <target latency> <filename1>"
                 "[<filename2> ...]\n");
         exit(INPUT_PARAMERR);
     }
@@ -317,7 +317,7 @@ int main(int argc, const char **argv)
         *lens = calloc(fc, sizeof(int)), /* array of lengths */
         *files = calloc(fc * FILE_LENGTH, sizeof(int)),
         totallen = readallfiles(argv+2, files, fc, lens);
-    /* multiply divisor by 1000 to get msecs */
+    /* dividing input timeslice by 1000 to convert msecs into secs */
     coros.timeslice = atoi(argv[1])/(double)(1000*fc);
     ucontext_t uctx_temp;
     double ttime = clock();     /* total sorting time */
