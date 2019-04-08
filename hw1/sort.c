@@ -8,7 +8,7 @@
  *          usage: sort <T> <filename1>[<filename2> ...]
  * OUTPUT:  writes resulting sequence to output.txt file
  *          outputs overall and each corutine sorting time in secs */
-
+#define _XOPEN_SOURCE /* Mac compatibility. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <ucontext.h>
@@ -44,6 +44,7 @@ static struct coro {
     coroutine *current;
     double timeslice;           /* coroutine timeslice in secs */
     int num;
+    bool isactive;
     clock_t clk;                /* time counter assistant */
 } coros;
 
@@ -132,19 +133,18 @@ int writefile(const char *fname, const int *a, int length)
 /* schedules next active coroutine */
 void schedule_coroutines()
 {
-    if (coros.pool == NULL)
-        return;
-    if (&coros.current->node == coros.current->node.next)
+    if (!coros.isactive)
         return;
     clock_t clk = clock() - coros.clk;
     double time_passed = clk/(double)CLOCKS_PER_SEC;
     /* switch if timeslice is exceeded */
     if (coros.timeslice > time_passed) {
+        /* continue to use timeslice */
         return;
     }
     coros.current->time += time_passed;
     coroutine *prev = coros.current;
-    coros.clk = clock();    
+    coros.clk = clock();
     coros.current = (coroutine *)coros.current->node.next;
     if (swapcontext(&prev->context, &coros.current->context) == -1)
         handle_error("swapcontext");
@@ -244,35 +244,6 @@ void mergefiles(int *a, int start, int end, int *lens)
     }
 }
 
-void setup_coroutines(const int *files, int fc, const int *lens)
-{
-    coros.pool = (coroutine *)calloc(fc, sizeof(coroutine));
-    coros.num = fc;
-    int shift = 0;
-    for (int i = 0; i < coros.num; i++) {
-        char *func_stack = allocate_stack(STACK_SIG);
-        if (getcontext(&coros.pool[i].context) == -1)
-            handle_error("getcontext");
-        coros.pool[i].context.uc_stack.ss_sp = func_stack;
-        coros.pool[i].context.uc_stack.ss_size = stack_size;
-        coros.pool[i].stack = func_stack;
-        if (i == 0) {
-            connect_nodes(&coros.pool[coros.num-1].node,
-                    &coros.pool[i].node);
-        } else {
-            connect_nodes(&coros.pool[i-1].node, 
-                    &coros.pool[i].node);
-        }
-        /* all coroutines shall return to main
-         * and wait for other if needed */
-        coros.pool[i].context.uc_link = &uctx_main;
-        makecontext(&coros.pool[i].context, sort, 2, files + shift, lens[i]);
-        shift += lens[i];
-        coros.pool[i].id = i;
-    }
-    coros.current = &coros.pool[0];
-}
-
 /* reads integers from files 'filenames' into '*files' array;
  * allocates memory and resizes '*files' if needed;
  * returns overall integers read count */
@@ -303,6 +274,49 @@ int readallfiles(const char **filenames, int **files, int fc, int *lens)
     return shift;
 }
 
+void coro_run()
+{
+    coros.clk = clock();
+    for (int i = 0; i < coros.num; i++) {
+        if (swapcontext(&uctx_main, &coros.current->context) == -1)
+            handle_error("swapcontext");
+        /* return after coroutine finished file sort
+         * and swap to the next */
+        remove_node(&coros.current->node);
+    }
+    coros.isactive = false;
+}
+
+void setup_coroutines(const int *files, int fc, const int *lens)
+{
+    coros.pool = (coroutine *)calloc(fc, sizeof(coroutine));
+    coros.num = fc;
+    coros.isactive = true;
+    int shift = 0;
+    for (int i = 0; i < coros.num; i++) {
+        char *func_stack = allocate_stack(STACK_SIG);
+        if (getcontext(&coros.pool[i].context) == -1)
+            handle_error("getcontext");
+        coros.pool[i].context.uc_stack.ss_sp = func_stack;
+        coros.pool[i].context.uc_stack.ss_size = stack_size;
+        coros.pool[i].stack = func_stack;
+        if (i == 0) {
+            connect_nodes(&coros.pool[coros.num-1].node,
+                    &coros.pool[i].node);
+        } else {
+            connect_nodes(&coros.pool[i-1].node, 
+                    &coros.pool[i].node);
+        }
+        /* all coroutines shall return to main
+         * and wait for other if needed */
+        coros.pool[i].context.uc_link = &uctx_main;
+        makecontext(&coros.pool[i].context, sort, 2, files + shift, lens[i]);
+        shift += lens[i];
+        coros.pool[i].id = i;
+    }
+    coros.current = &coros.pool[0];
+}
+
 int main(int argc, const char **argv)
 {
     if (argc < 3) {
@@ -315,38 +329,21 @@ int main(int argc, const char **argv)
         *files = NULL,                   /* array of read integers */
         totallen = readallfiles(argv+2, &files, fc, lens);
     double ttime = clock();     /* total sorting time */
-    ucontext_t uctx_temp;
 
     coros.pool = NULL;
     coros.current = NULL;
-
-    if (fc == 1) {
-        sort(files, lens[0]);
-    } else {
-        /* dividing input timeslice by 1000 to convert msecs into secs */
-        coros.timeslice = atoi(argv[1])/(double)(1000*fc);
-        setup_coroutines(files, fc, lens);
-        /* start coroutines */
-        coros.clk = clock();
-        if (swapcontext(&uctx_main, &coros.current->context) == -1)
-            handle_error("swapcontext");
-        /* return after coroutine finished file sort */
-        if (&coros.current->node != coros.current->node.next) {
-            remove_node((struct list *)coros.current);
-            if (swapcontext(&uctx_temp, &coros.current->context) == -1)
-                handle_error("swapcontext");
-        }
-    }
+    /* dividing input timeslice by 1000 to convert msecs into secs */
+    coros.timeslice = atoi(argv[1])/(double)(1000*fc);
+    setup_coroutines(files, fc, lens);
+    coro_run();
     mergefiles(files, 0, fc, lens);
     ttime = (clock() - ttime) / (double)CLOCKS_PER_SEC;
-    if (fc > 1) {
-        for (int i = 0; i < coros.num; i++)
-            printf("Coroutine #%d sorting time: %.6f sec\n", 
-                    i, coros.pool[i].time);
-        for (int i = 0; i < coros.num; i++)
-            free(coros.pool[i].stack);
-        free(coros.pool);
-    }
+    for (int i = 0; i < coros.num; i++)
+        printf("Coroutine #%d sorting time: %.6f sec\n", 
+                i, coros.pool[i].time);
+    for (int i = 0; i < coros.num; i++)
+        free(coros.pool[i].stack);
+    free(coros.pool);
     printf("Overall sorting time: %.6f sec\n", ttime);
     writefile("output.txt", files, totallen);
     free(files);

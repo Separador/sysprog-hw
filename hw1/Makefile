@@ -10,7 +10,6 @@ clean_output:
 	rm -f output.txt
 run: sort clean_output
 	./sort $(timeslice) $(all_test_files)
-	make check
 err: sort clean_output
 	./sort 100  test2.txt test1.txt
 check:
